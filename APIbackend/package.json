@@ -8,6 +8,11 @@
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
+  "jest": {
+    "setupFilesAfterEnv": [
+      "<rootDir>/__tests__/setup.js"
+    ]
+  },
   "keywords": [
     "blog",
     "api",
@@ -15,7 +20,7 @@
     "express",
     "prisma"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Your Name",
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^5.1.1",

@@ -10,7 +10,9 @@ const prisma = new PrismaClient();
 // GET all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await prisma.user.findMany();
+    const users = await prisma.user.findMany({
+      select: { id: true, username: true, email: true, role: true }, // Don't include password
+    });
     res.json(users);
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -23,20 +25,21 @@ exports.getUserById = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
 
-    // Authorization check: Only allow access to the user's own data or if admin
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
+      select: { id: true, username: true, email: true, role: true }, // Exclude password
     });
+
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
     res.json(user);
   } catch (error) {
-    console.error("Error fetching user by ID:", error);
+    console.error("Error fetching user:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -65,6 +68,7 @@ exports.createUser = async (req, res) => {
         email,
         username,
         password: hashedPassword,
+        role: "user", //assign a default role
       },
     });
     res
@@ -76,8 +80,13 @@ exports.createUser = async (req, res) => {
   }
 };
 
+// POST user login
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
 
   try {
     const user = await prisma.user.findUnique({
@@ -95,7 +104,7 @@ exports.loginUser = async (req, res) => {
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || "your_jwt_secret",
       { expiresIn: "1h" }
     );
     res.json({ token });
@@ -110,6 +119,11 @@ exports.updateUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
     const { email, username, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
@@ -118,15 +132,24 @@ exports.updateUser = async (req, res) => {
     const updateData = {};
     if (email) updateData.email = email;
     if (username) updateData.username = username;
-    if (password) updateData.password = await bcrypt.hash(password, 10); // Hash new password if provided
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 10); // Hash new password
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
+      select: { id: true, username: true, email: true, role: true }, // Exclude password
     });
-    res.json(updatedUser); // Return updated user data
+    res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
+    //Check for unique constraint violation
+    if (error.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Email or username already in use." });
+    }
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -136,6 +159,12 @@ exports.deleteUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
 
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -143,7 +172,7 @@ exports.deleteUser = async (req, res) => {
     await prisma.user.delete({
       where: { id: userId },
     });
-    res.sendStatus(204); // No content
+    res.sendStatus(204); // No Content
   } catch (error) {
     console.error("Error deleting user:", error);
     res.status(500).json({ error: "Internal server error" });

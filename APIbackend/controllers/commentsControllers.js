@@ -1,4 +1,4 @@
-// APIbackend/controllers/commentsControllers.js
+// controllers/commentsController.js
 const { PrismaClient } = require("@prisma/client");
 const { body, validationResult } = require("express-validator");
 
@@ -15,6 +15,16 @@ const validateComment = [
 exports.getCommentsByPostId = async (req, res) => {
   try {
     const postId = parseInt(req.params.postId);
+
+    // Check if the post exists
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
     const comments = await prisma.comment.findMany({
       where: { postId: postId },
       include: { author: true }, // Include author information
@@ -51,23 +61,23 @@ exports.createComment = async (req, res) => {
     return res.status(400).json({ errors: errors.array() });
   }
   try {
-    const { content, postId, authorId, username, email } = req.body;
+    const { content, postId } = req.body;
+    const authorId = req.user.id; // Get authorId from authenticated user
 
     const comment = await prisma.comment.create({
       data: {
         content,
-        postId: parseInt(postId), // Parse postId to integer
-        authorId: parseInt(authorId), // Parse authorId to integer
-        username,
-        email,
+        postId: parseInt(postId), // Ensure postId is an integer
+        authorId: authorId,
+        // Removed username and email. Now comes from the authenticated user.
       },
     });
     res.status(201).json(comment);
   } catch (error) {
     console.error("Error creating comment:", error);
     if (error.code === "P2003") {
-      // Foreign key constraint failed
-      return res.status(400).json({ error: "Invalid post ID or author ID" });
+      // Foreign key constraint failed (post doesn't exist)
+      return res.status(400).json({ error: "Invalid post ID" });
     }
     res.status(500).json({ error: "Internal server error" });
   }
@@ -83,7 +93,7 @@ exports.updateComment = async (req, res) => {
       where: { id: commentId },
     });
     if (!comment) {
-      return res.status(404).json({ error: "Comment Not found" });
+      return res.status(404).json({ error: "Comment not found" });
     }
 
     if (req.user.id !== comment.authorId && req.user.role !== "admin") {

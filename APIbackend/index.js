@@ -1,21 +1,16 @@
-// ./APIbackend/index.js
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcryptjs"); // For password hashing
-const jwt = require("jsonwebtoken"); // For authentication
-const cors = require("cors"); // For handling Cross-Origin Resource Sharing
-const { body, validationResult } = require("express-validator"); //Input validation
-const { authenticateToken, authorizeRole } = require("./authMiddleware");
+const cors = require("cors");
+const { authenticateToken, authorizeRole } = require("./authMiddleware"); // CORRECT PATH
 
 const prisma = new PrismaClient();
 const app = express();
 const port = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; // Use environment variable for secret
 
-app.use(cors()); // Enable CORS for all origins - configure this for production!
+app.use(cors());
 app.use(express.json());
 
-// Import route handlers
+// Import route handlers (Corrected paths)
 const userRoutes = require("./routes/users");
 const postRoutes = require("./routes/posts");
 const commentRoutes = require("./routes/comments");
