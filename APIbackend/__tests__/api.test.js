@@ -1,28 +1,9 @@
-// __tests__/api.test.js  (This file is now much smaller)
-
 const request = require("supertest");
-const { app, server } = require("../index"); // Import your Express app and server.
+const { app, server } = require("../index");
 
 describe("Blog API Integration Tests", () => {
-  // Global setup and teardown (for the entire test suite)
-
   afterAll(async () => {
-    await server.close(); // Close the server after all tests are done
-  });
-
-  // Test suite for User routes
-  describe("User Routes", () => {
-    require("./users.test.js"); // Import the user tests
-  });
-
-  // Test suite for Post routes
-  describe("Post Routes", () => {
-    require("./posts.test.js"); //Import post tests.
-  });
-
-  // Test suite for Comment routes
-  describe("Comment Routes", () => {
-    require("./comments.test.js");
+    await server.close();
   });
 
   it("GET / - should return a welcome message", async () => {

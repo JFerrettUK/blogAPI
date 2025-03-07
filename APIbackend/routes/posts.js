@@ -1,6 +1,7 @@
+// APIbackend/routes/posts.js
 const express = require("express");
 const router = express.Router();
-const postsController = require("../controllers/postsControllers"); // CORRECT PATH
+const postsController = require("../controllers/postsControllers");
 const { authenticateToken, authorizeRole } = require("../authMiddleware");
 const { body, validationResult } = require("express-validator");
 

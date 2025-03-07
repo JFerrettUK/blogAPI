@@ -1,34 +1,24 @@
-// controllers/commentsController.js
 const { PrismaClient } = require("@prisma/client");
-const { body, validationResult } = require("express-validator");
-
+const { validationResult } = require("express-validator");
 const prisma = new PrismaClient();
-
-// Validation middleware
-const validateComment = [
-  body("content").trim().notEmpty().withMessage("Comment content is required."),
-  body("postId").isInt().withMessage("Post ID must be an integer."),
-  body("authorId").isInt().withMessage("Author ID must be an integer."),
-];
 
 // GET all comments for a specific post
 exports.getCommentsByPostId = async (req, res) => {
   try {
     const postId = parseInt(req.params.postId);
 
-    // Check if the post exists
-    const post = await prisma.post.findUnique({
-      where: { id: postId },
-    });
-
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
     const comments = await prisma.comment.findMany({
       where: { postId: postId },
-      include: { author: true }, // Include author information
+      include: {
+        author: {
+          select: { id: true, username: true, email: true },
+        },
+      },
     });
+    if (!comments || comments.length === 0) {
+      return res.status(404).json({ error: "No comments found for this post" });
+    }
+
     res.json(comments);
   } catch (error) {
     console.error("Error fetching comments by post ID:", error);
@@ -40,10 +30,16 @@ exports.getCommentsByPostId = async (req, res) => {
 exports.getCommentById = async (req, res) => {
   try {
     const commentId = parseInt(req.params.id);
+
     const comment = await prisma.comment.findUnique({
       where: { id: commentId },
-      include: { author: true }, // Include author
+      include: {
+        author: {
+          select: { id: true, username: true, email: true },
+        },
+      },
     });
+
     if (!comment) {
       return res.status(404).json({ error: "Comment not found" });
     }
@@ -54,37 +50,37 @@ exports.getCommentById = async (req, res) => {
   }
 };
 
-// POST a new comment
+// POST a new comment on a post
 exports.createComment = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
   try {
-    const { content, postId } = req.body;
-    const authorId = req.user.id; // Get authorId from authenticated user
+    const { content, postId } = req.body; // Only expect content and postId
+    const authorId = req.user.userId; // Get authorId from req.user
 
     const comment = await prisma.comment.create({
       data: {
         content,
-        postId: parseInt(postId), // Ensure postId is an integer
-        authorId: authorId,
-        // Removed username and email. Now comes from the authenticated user.
+        postId,
+        authorId, // Use the extracted authorId
       },
     });
     res.status(201).json(comment);
   } catch (error) {
     console.error("Error creating comment:", error);
-    if (error.code === "P2003") {
-      // Foreign key constraint failed (post doesn't exist)
-      return res.status(400).json({ error: "Invalid post ID" });
-    }
     res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// PUT/PATCH update a comment by ID
+// PUT/PATCH update a comment
 exports.updateComment = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const commentId = parseInt(req.params.id);
     const { content } = req.body;
@@ -92,17 +88,19 @@ exports.updateComment = async (req, res) => {
     const comment = await prisma.comment.findUnique({
       where: { id: commentId },
     });
+
     if (!comment) {
       return res.status(404).json({ error: "Comment not found" });
     }
 
-    if (req.user.id !== comment.authorId && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Forbidden" });
+    if (comment.authorId !== req.user.userId && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden." });
     }
 
     const updatedComment = await prisma.comment.update({
       where: { id: commentId },
       data: { content },
+      include: { author: { select: { id: true, username: true } } }, // Include author info
     });
     res.json(updatedComment);
   } catch (error) {
@@ -111,7 +109,7 @@ exports.updateComment = async (req, res) => {
   }
 };
 
-// DELETE a comment by ID
+// DELETE a comment
 exports.deleteComment = async (req, res) => {
   try {
     const commentId = parseInt(req.params.id);
@@ -119,18 +117,19 @@ exports.deleteComment = async (req, res) => {
     const comment = await prisma.comment.findUnique({
       where: { id: commentId },
     });
+
     if (!comment) {
-      return res.status(404).json({ error: "Comment Not found" });
+      return res.status(404).json({ error: "Comment not found" });
     }
 
-    if (req.user.id !== comment.authorId && req.user.role !== "admin") {
+    if (comment.authorId !== req.user.userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
 
     await prisma.comment.delete({
       where: { id: commentId },
     });
-    res.sendStatus(204); // No content
+    res.sendStatus(204); // No Content
   } catch (error) {
     console.error("Error deleting comment:", error);
     res.status(500).json({ error: "Internal server error" });

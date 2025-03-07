@@ -1,20 +1,21 @@
+// index.js
 const express = require("express");
+const bodyParser = require("body-parser");
 const { PrismaClient } = require("@prisma/client");
-const cors = require("cors");
-const { authenticateToken, authorizeRole } = require("./authMiddleware"); // CORRECT PATH
 
-const prisma = new PrismaClient();
 const app = express();
-const port = process.env.PORT || 3001;
+const port = 3001;
 
-app.use(cors());
-app.use(express.json());
+// Use bodyParser.json() to parse JSON payloads
+app.use(bodyParser.json());
 
-// Import route handlers (Corrected paths)
+// Import routes
 const userRoutes = require("./routes/users");
 const postRoutes = require("./routes/posts");
 const commentRoutes = require("./routes/comments");
+const authMiddleware = require("./authMiddleware"); // Import authMiddleware
 
+// Mount routes at their respective paths
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
@@ -23,8 +24,15 @@ app.get("/", (req, res) => {
   res.send("Blog API is running!");
 });
 
-const server = app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+const prisma = new PrismaClient();
 
-module.exports = { app, server, prisma }; // Export for testing
+let server; // Declare server outside the listener
+
+if (process.env.NODE_ENV !== "test") {
+  server = app.listen(port, () => {
+    // Only listen if not in test environment.
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+module.exports = { app, server, prisma }; // Export app, server and prisma

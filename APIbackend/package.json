@@ -9,9 +9,8 @@
     "dev": "nodemon index.js"
   },
   "jest": {
-    "setupFilesAfterEnv": [
-      "<rootDir>/__tests__/setup.js"
-    ]
+    "testEnvironment": "node",
+    "verbose": true
   },
   "keywords": [
     "blog",

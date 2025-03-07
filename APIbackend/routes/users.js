@@ -1,6 +1,7 @@
+// APIbackend/routes/users.js
 const express = require("express");
 const router = express.Router();
-const usersController = require("../controllers/usersControllers"); // CORRECT PATH
+const usersController = require("../controllers/usersControllers");
 const { body, validationResult } = require("express-validator");
 const { authenticateToken, authorizeRole } = require("../authMiddleware"); // CORRECT PATH
 
@@ -32,7 +33,7 @@ router.post("/login", usersController.loginUser);
 
 // PUT/PATCH update a user by ID (protected - user or admin)
 router.put("/:id", authenticateToken, usersController.updateUser);
-router.patch("/:id", authenticateToken, usersController.updateUser); // Consider PATCH for partial updates
+router.patch("/:id", authenticateToken, usersController.updateUser);
 
 // DELETE a user by ID (protected - admin or the user themselves)
 router.delete("/:id", authenticateToken, usersController.deleteUser);

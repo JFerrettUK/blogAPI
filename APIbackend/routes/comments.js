@@ -1,6 +1,7 @@
+// APIbackend/routes/comments.js
 const express = require("express");
 const router = express.Router();
-const commentsController = require("../controllers/commentsControllers"); // CORRECT PATH
+const commentsController = require("../controllers/commentsControllers");
 const { authenticateToken, authorizeRole } = require("../authMiddleware");
 const { body, validationResult } = require("express-validator");
 

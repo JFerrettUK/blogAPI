@@ -6,12 +6,20 @@ const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 
 const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; //added for login route
 
 // GET all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, username: true, email: true, role: true }, // Don't include password
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      }, // Don't include password
     });
     res.json(users);
   } catch (error) {
@@ -26,12 +34,20 @@ exports.getUserById = async (req, res) => {
     const userId = parseInt(req.params.id);
 
     if (req.user.id !== userId && req.user.role !== "admin") {
+      //Added authorization
       return res.status(403).json({ message: "Forbidden" });
     }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, email: true, role: true }, // Exclude password
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      }, // Exclude password
     });
 
     if (!user) {
@@ -59,7 +75,7 @@ exports.createUser = async (req, res) => {
       where: { email: email },
     });
     if (existingUser) {
-      return res.status(409).json({ message: "Email already in use" });
+      return res.status(409).json({ message: "Email already in use" }); // 409 Conflict
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -68,12 +84,13 @@ exports.createUser = async (req, res) => {
         email,
         username,
         password: hashedPassword,
-        role: "user", //assign a default role
+        role: "user", // Set a default role
       },
     });
+    // *Never* send back the password, even the hashed one.
     res
       .status(201)
-      .json({ id: user.id, email: user.email, username: user.username }); // Return created user data, but NOT the password.
+      .json({ id: user.id, email: user.email, username: user.username });
   } catch (error) {
     console.error("Error creating user:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -102,11 +119,9 @@ exports.loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET || "your_jwt_secret",
-      { expiresIn: "1h" }
-    );
+    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
     res.json({ token });
   } catch (error) {
     console.error("Login error:", error);
@@ -118,13 +133,9 @@ exports.loginUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
-    const { email, username, password } = req.body;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const { email, username, password } = req.body; //Allow password update here, but hash it.
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
+    //Authorization check
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -133,18 +144,24 @@ exports.updateUser = async (req, res) => {
     if (email) updateData.email = email;
     if (username) updateData.username = username;
     if (password) {
-      updateData.password = await bcrypt.hash(password, 10); // Hash new password
+      updateData.password = await bcrypt.hash(password, 10); // Hash the new password
     }
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
-      select: { id: true, username: true, email: true, role: true }, // Exclude password
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      }, // Don't return the password
     });
     res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
-    //Check for unique constraint violation
     if (error.code === "P2002") {
       return res
         .status(400)
@@ -158,12 +175,6 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
 
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
