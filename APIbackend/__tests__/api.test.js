@@ -3,7 +3,9 @@ const { app, server } = require("../index");
 
 describe("Blog API Integration Tests", () => {
   afterAll(async () => {
-    await server.close();
+    if (server && typeof server.close === 'function') {
+      await server.close();
+    }
   });
 
   it("GET / - should return a welcome message", async () => {

@@ -1,25 +1,14 @@
 // APIbackend/controllers/usersControllers.js
-
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { validationResult } = require("express-validator");
+const { body, validationResult } = require("express-validator");
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; //added for login route
-
-// GET all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-      }, // Don't include password
+      select: { id: true, username: true, email: true, role: true },
     });
     res.json(users);
   } catch (error) {
@@ -28,7 +17,6 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// GET a single user by ID
 exports.getUserById = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
@@ -60,13 +48,11 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-// POST a new user (sign up)
 exports.createUser = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   try {
     const { email, username, password } = req.body;
 
@@ -97,7 +83,6 @@ exports.createUser = async (req, res) => {
   }
 };
 
-// POST user login
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -129,7 +114,6 @@ exports.loginUser = async (req, res) => {
   }
 };
 
-// PUT/PATCH update a user by ID
 exports.updateUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
@@ -138,6 +122,15 @@ exports.updateUser = async (req, res) => {
     //Authorization check
     if (req.user.id !== userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
+    }
+    
+    // Check if user exists
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
+    if (!userExists) {
+      return res.status(404).json({ error: "User not found" });
     }
 
     const updateData = {};
@@ -171,7 +164,6 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-// DELETE a user by ID
 exports.deleteUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);

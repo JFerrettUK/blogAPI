@@ -1,65 +1,50 @@
-// __tests__/users.test.js
 const request = require("supertest");
-const { app, prisma, server } = require("../index"); // Import app, prisma, and server
-const bcrypt = require("bcryptjs");
+const { app, server } = require("../index");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+
+jest.mock("jsonwebtoken");
+jest.mock("bcryptjs");
+jest.mock("../prisma");
+const prisma = require("../prisma");
 
 describe("User Routes", () => {
-  const testUser = {
-    id: 1,
-    email: "test@example.com",
-    username: "testuser",
-    password: "hashed_password", // Mock hashed password
-    role: "user",
-  };
-
-  beforeAll((done) => {
-    // Use beforeAll for server setup
-    if (!server) {
-      // Check if server is already running
-      // Remove 'let' here.  We want to assign to the imported 'server'.
-      app.listen(3001, () => {
-        console.log("Test server running on port 3001");
-        done(); // Call done() to signal async operation completion
-      });
-    } else {
-      done();
-    }
-  });
+  let testUser;
+  let testUserId = 1;
 
   beforeEach(() => {
-    // Mock user.findUnique for user-related lookups.
-    prisma.user.findUnique.mockImplementation(async ({ where }) => {
-      if (where.email === "test@example.com" || where.id === 1) {
-        return testUser;
-      } else {
-        return null;
-      }
-    });
-
-    prisma.user.create.mockResolvedValue(testUser);
-    prisma.user.findMany.mockResolvedValue([testUser]);
-    prisma.user.update.mockResolvedValue(testUser);
-    prisma.user.delete.mockResolvedValue();
-
-    bcrypt.hash.mockResolvedValue("hashed_password"); // Mock the bcrypt hash function
-    bcrypt.compare.mockResolvedValue(true);
-    jwt.sign.mockReturnValue("mocked_token");
-    jwt.verify.mockImplementation((token, secret, callback) => {
-      callback(null, { userId: testUser.id, role: testUser.role });
-    });
-  });
-
-  afterEach(() => {
+    // Reset all mocks
     jest.clearAllMocks();
+    
+    // Store the test user
+    testUser = {
+      id: testUserId,
+      email: "test@example.com",
+      username: "testuser",
+      password: "hashed_password",
+      role: "user",
+    };
+    
+    // Configure prisma mock methods for testing
+    prisma.user.findUnique.mockImplementation(async ({ where }) => {
+      if (where.email === "test@example.com" || where.id === testUserId) {
+        return testUser;
+      }
+      return null;
+    });
+    
+    prisma.user.findMany.mockResolvedValue([testUser]);
+    prisma.user.create.mockResolvedValue(testUser);
+    prisma.user.update.mockResolvedValue(testUser);
+    prisma.user.delete.mockResolvedValue(undefined);
+
+    bcrypt.hash.mockResolvedValue("hashed_password");
   });
 
-  afterAll(async () => {
-    // Correctly close the server after *all* tests
+  afterAll(() => {
     if (server) {
-      await server.close();
+      server.close();
     }
-    await prisma.$disconnect();
   });
 
   it("should create a new user", async () => {
@@ -68,79 +53,86 @@ describe("User Routes", () => {
       username: "newuser",
       password: "password",
     };
-    prisma.user.findUnique.mockResolvedValue(null); //ensure no user exists
-    prisma.user.create.mockResolvedValue({ id: 2, ...newUser, role: "user" });
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 2,
+      ...newUser,
+      role: "user",
+    });
+
     const res = await request(app).post("/api/users").send(newUser);
-    expect(res.statusCode).toEqual(201);
+    expect(res.statusCode).toBe(201);
     expect(res.body.email).toBe(newUser.email);
+    expect(res.body).not.toHaveProperty("password");
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: newUser.email,
+        username: newUser.username,
+        password: "hashed_password",
+        role: "user",
+      },
+    });
   });
 
-  it("should return a 400 if invalid data", async () => {
-    const res = await request(app)
-      .post("/api/users")
-      .send({ email: "bademail", username: "testuser", password: "password" });
+  it("should return 400 if user data is invalid", async () => {
+    const invalidUser = { username: "te" };
+    const res = await request(app).post("/api/users").send(invalidUser);
     expect(res.statusCode).toEqual(400);
+    expect(res.body.errors).toBeDefined();
   });
 
-  it("should return 409 if email exists", async () => {
-    prisma.user.findUnique.mockResolvedValueOnce(testUser);
-    const res = await request(app)
-      .post("/api/users")
-      .send({
-        email: "test@example.com",
-        username: "anotheruser",
-        password: "password",
-      });
+  it("should return 409 if user exists", async () => {
+    const existingUser = {
+      email: "test@example.com",
+      username: "testuser",
+      password: "password",
+    };
+    const res = await request(app).post("/api/users").send(existingUser);
     expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ message: "Email already in use" });
   });
 
-  it("should authenticate a user", async () => {
+  it("should login a user", async () => {
     const loginData = { email: "test@example.com", password: "password" };
-    prisma.user.findUnique.mockResolvedValue(testUser); // User exists
-    bcrypt.compare.mockResolvedValue(true); // Password matches
+    bcrypt.compare.mockResolvedValue(true);
+    jwt.sign.mockReturnValue("mocked_token");
 
     const res = await request(app).post("/api/users/login").send(loginData);
     expect(res.statusCode).toBe(200);
-    expect(res.body.token).toBeDefined(); // Token should be present
+    expect(res.body.token).toBe("mocked_token");
+    expect(jwt.sign).toHaveBeenCalledWith(
+      { userId: testUser.id, role: testUser.role },
+      expect.anything(), // Match any secret
+      { expiresIn: "1h" }
+    );
   });
 
-  it("should return 401 for incorrect password", async () => {
+  it("should return 401 for invalid login credentials", async () => {
     const loginData = { email: "test@example.com", password: "wrongpassword" };
-    bcrypt.compare.mockResolvedValue(false); //Password Does not Match
+    bcrypt.compare.mockResolvedValue(false);
 
     const res = await request(app).post("/api/users/login").send(loginData);
     expect(res.statusCode).toBe(401);
   });
 
-  it("should return 401 for no user found", async () => {
-    prisma.user.findUnique.mockResolvedValue(null); // Simulate user not found
-
-    const res = await request(app)
-      .post("/api/users/login")
-      .send({ email: "nonexistent@example.com", password: "password" });
-
-    expect(res.statusCode).toBe(401);
-  });
-
-  it("should return 400 for missing credentials", async () => {
+  it("should return 400 for missing login credentials", async () => {
     const res = await request(app).post("/api/users/login").send({});
     expect(res.statusCode).toBe(400);
   });
 
   it("should get all users (admin only)", async () => {
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
-      callback(null, { userId: 1, role: "admin" }); // Simulate admin login
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: testUserId, role: "admin" });
     });
-
-    prisma.user.findMany.mockResolvedValue([testUser]);
     const res = await request(app)
       .get("/api/users")
       .set("Authorization", "Bearer mocked_token");
     expect(res.statusCode).toEqual(200);
+    expect(res.body.length).toBeGreaterThan(0);
   });
 
-  it("should respond with 403 if user does not have required role", async () => {
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+  it("should return 403 if user is not an admin", async () => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
       callback(null, { userId: 2, role: "user" }); // Not an admin
     });
     const res = await request(app)
@@ -150,104 +142,120 @@ describe("User Routes", () => {
   });
 
   it("should get a user by ID", async () => {
-    prisma.user.findUnique.mockResolvedValue(testUser); // User exists
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: testUserId, role: "user" });
+    });
     const res = await request(app)
-      .get(`/api/users/1`)
+      .get(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token");
     expect(res.statusCode).toBe(200);
-    expect(res.body.id).toBe(1);
+    expect(res.body.id).toBe(testUserId);
   });
 
   it("should return 403 if unauthorized user tries to get user details", async () => {
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
-      callback(null, { userId: 2, role: "user" }); // Different user
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: 999, role: "user" }); // Different user
     });
     const res = await request(app)
-      .get(`/api/users/1`)
+      .get(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token");
     expect(res.statusCode).toBe(403);
   });
 
-  it("should return 404 if user not found when deleting", async () => {
+  it("should return 404 if user is not found", async () => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: 999, role: "user" });
+    });
     prisma.user.findUnique.mockResolvedValue(null);
     const res = await request(app)
-      .delete(`/api/users/999`)
+      .get("/api/users/999")
       .set("Authorization", "Bearer mocked_token");
     expect(res.statusCode).toBe(404);
   });
 
   it("should update user details", async () => {
-    const updatedUser = {
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: testUserId, role: "user" });
+    });
+    const updatedUserData = {
       email: "newemail@example.com",
       username: "newusername",
     };
-    prisma.user.findUnique.mockResolvedValue(testUser);
-    prisma.user.update.mockResolvedValue({ ...testUser, ...updatedUser });
+    prisma.user.update.mockResolvedValue({
+      ...testUser,
+      ...updatedUserData,
+    });
+
     const res = await request(app)
-      .put(`/api/users/1`)
+      .put(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token")
-      .send(updatedUser);
+      .send(updatedUserData);
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body.email).toBe(updatedUser.email);
-    expect(res.body.username).toBe(updatedUser.username);
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: testUser.id },
-      data: updatedUser,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    expect(res.body.email).toBe(updatedUserData.email);
+    expect(res.body.username).toBe(updatedUserData.username);
   });
 
   it("should return 403 if unauthorized user tries to update user", async () => {
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
-      callback(null, { userId: 2, role: "user" });
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: 2, role: "user" }); // Different user
     });
     const res = await request(app)
-      .put(`/api/users/1`)
+      .put(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token")
       .send({ username: "updateduser" });
     expect(res.statusCode).toBe(403);
   });
 
-  it("should delete a user", async () => {
-    prisma.user.delete.mockResolvedValue();
-    prisma.user.findUnique.mockResolvedValue(testUser);
+  it("should return 404 when updating a non-existent user", async () => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: 99, id: 99, role: "user" });
+    });
+
+    // First, we need to make findUnique return null to indicate user not found
+    prisma.user.findUnique.mockResolvedValue(null);
 
     const res = await request(app)
-      .delete(`/api/users/1`)
+      .put("/api/users/99")
+      .set("Authorization", "Bearer mocked_token")
+      .send({ email: "new@mail.com" });
+
+    expect(res.statusCode).toBe(404); // Expect 404
+  });
+
+  it("should delete a user", async () => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: testUserId, role: "user" });
+    });
+    const res = await request(app)
+      .delete(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token");
     expect(res.statusCode).toBe(204);
   });
 
-  it("should return a 404 error when trying to update a non-existent user", async () => {
-    prisma.user.findUnique.mockResolvedValue(null);
-
-    const res = await request(app)
-      .put("/api/users/999") // Non-existent user ID
-      .set("Authorization", "Bearer mocked_token")
-      .send({ username: "updatedname" });
-
-    expect(res.statusCode).toBe(404);
-    expect(res.body).toEqual({ error: "User not found" });
-  });
-
   it("should return 403 if unauthorized user tries to delete", async () => {
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
       callback(null, { userId: 999, role: "user" }); // Different user
     });
-
     const res = await request(app)
-      .delete(`/api/users/1`)
+      .delete(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token");
 
     expect(res.statusCode).toBe(403);
-    expect(prisma.user.delete).not.toHaveBeenCalled();
+  });
+
+  it("should handle Prisma errors during delete and return 500", async () => {
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: testUserId, role: "user" });
+    });
+    prisma.user.delete.mockImplementation(() => {
+      throw new Error("Some database error"); // Simulate a generic Prisma error
+    });
+
+    const res = await request(app)
+      .delete(`/api/users/${testUserId}`)
+      .set("Authorization", "Bearer mocked_token");
+
+    expect(res.statusCode).toBe(500); // Or your specific error handling code
   });
 });

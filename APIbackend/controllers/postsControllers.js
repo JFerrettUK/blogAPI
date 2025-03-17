@@ -1,9 +1,7 @@
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { body, validationResult } = require("express-validator");
 
-const prisma = new PrismaClient();
-
-// Validation middleware for creating a post
+// Validation middleware
 const validatePost = [
   body("title").trim().notEmpty().withMessage("Title is required."),
   body("content").trim().notEmpty().withMessage("Content is required."),
@@ -20,7 +18,7 @@ exports.getAllPosts = async (req, res) => {
         comments: {
           include: {
             author: {
-              select: { id: true, username: true, email: true }, //select only necessary user fields for comments as well.
+              select: { id: true, username: true, email: true },
             },
           },
         },
@@ -37,7 +35,6 @@ exports.getAllPosts = async (req, res) => {
 exports.getPostById = async (req, res) => {
   try {
     const postId = parseInt(req.params.id);
-
     const post = await prisma.post.findUnique({
       where: { id: postId },
       include: {
@@ -53,7 +50,6 @@ exports.getPostById = async (req, res) => {
         },
       },
     });
-
     if (!post) {
       return res.status(404).json({ error: "Post not found" });
     }
@@ -64,13 +60,12 @@ exports.getPostById = async (req, res) => {
   }
 };
 
-// POST a new post
+// POST create a new post
 exports.createPost = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   try {
     const { title, content } = req.body;
     const authorId = req.user.userId; // Get authorId from the authenticated user
@@ -79,7 +74,7 @@ exports.createPost = async (req, res) => {
       data: {
         title,
         content,
-        authorId, // Use the extracted authorId
+        authorId: authorId, // Use the extracted authorId
         published: true,
       },
     });
@@ -90,25 +85,20 @@ exports.createPost = async (req, res) => {
   }
 };
 
-// PUT/PATCH update a post
+// PUT/PATCH update a post by ID
 exports.updatePost = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   try {
     const postId = parseInt(req.params.id);
-    const { title, content } = req.body;
+    const { title, content, published } = req.body;
 
-    const post = await prisma.post.findUnique({
-      where: { id: postId },
-    });
-
+    const post = await prisma.post.findUnique({ where: { id: postId } });
     if (!post) {
       return res.status(404).json({ error: "Post not found" });
     }
-    //Authorization check
     if (post.authorId !== req.user.userId && req.user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -118,8 +108,8 @@ exports.updatePost = async (req, res) => {
       data: {
         title,
         content,
+        published,
       },
-      include: { author: { select: { id: true, username: true } } }, // Include author info
     });
     res.json(updatedPost);
   } catch (error) {
@@ -128,7 +118,7 @@ exports.updatePost = async (req, res) => {
   }
 };
 
-// DELETE a post
+// DELETE a post by ID
 exports.deletePost = async (req, res) => {
   try {
     const postId = parseInt(req.params.id);
@@ -148,7 +138,7 @@ exports.deletePost = async (req, res) => {
     await prisma.post.delete({
       where: { id: postId },
     });
-    res.sendStatus(204); // No Content
+    res.sendStatus(204); // No content
   } catch (error) {
     console.error("Error deleting post:", error);
     res.status(500).json({ error: "Internal server error" });

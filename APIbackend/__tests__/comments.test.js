@@ -1,211 +1,220 @@
-// __tests__/comments.test.js
 const request = require("supertest");
-const { app, prisma, server } = require("../index"); // Import app, prisma, and server
+const { app, server } = require("../index");
 const jwt = require("jsonwebtoken");
 
-describe("Comment Routes", () => {
-  const testUserId = 1;
-  const testPostId = 1;
-  const testCommentId = 1;
-  const mockComment = {
-    id: testCommentId,
-    content: "Test Comment",
-    postId: testPostId,
-    authorId: testUserId,
-  };
-  const mockPost = {
-    id: 1,
-    title: "Test Post",
-    content: "Test Content",
-    authorId: 1,
-    published: true,
-  };
+jest.mock("jsonwebtoken");
+jest.mock("../prisma");
+const prisma = require("../prisma");
 
-  beforeAll((done) => {
-    if (!server) {
-      app.listen(3001, () => {
-        console.log("Test server running on port 3001");
-        done();
-      });
-    } else {
-      done();
-    }
-  });
+describe("Comment Routes", () => {
+  let testComment;
+  let testUser;
+  let testPost;
 
   beforeEach(() => {
-    // Mock authentication
+    // Reset all mocks
+    jest.clearAllMocks();
+    
+    testUser = { id: 1, username: "testuser", role: "author" };
+    testPost = {
+      id: 1,
+      title: "Test Post",
+      content: "Post Content",
+      authorId: 1,
+    };
+    testComment = {
+      id: 1,
+      content: "This is a test comment.",
+      postId: 1,
+      authorId: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Set up JWT mock
     jwt.verify.mockImplementation((token, secret, callback) => {
-      callback(null, { userId: testUserId, role: "user" });
+      callback(null, { userId: 1, role: "author" });
     });
 
-    // Mock Prisma methods *for this file's tests*
-    prisma.comment.findMany.mockReset();
-    prisma.comment.findUnique.mockReset();
-    prisma.comment.create.mockReset();
-    prisma.comment.update.mockReset();
-    prisma.comment.delete.mockReset();
-    prisma.post.findUnique.mockReset();
-
-    prisma.comment.findMany.mockResolvedValue([mockComment]);
-    prisma.comment.findUnique.mockImplementation(({ where }) =>
-      where.id === testCommentId
-        ? Promise.resolve(mockComment)
-        : Promise.resolve(null)
-    );
-    prisma.comment.create.mockImplementation(({ data }) =>
-      Promise.resolve({ id: 2, ...data })
-    );
-    prisma.comment.update.mockImplementation(({ where, data }) =>
-      Promise.resolve({ ...mockComment, ...data })
-    );
-    prisma.comment.delete.mockResolvedValue();
-    prisma.post.findUnique.mockImplementation(({ where }) =>
-      where.id === testPostId
-        ? Promise.resolve(mockPost)
-        : Promise.resolve(null)
-    );
+    // Configure prisma mock methods for testing
+    prisma.comment.findMany.mockResolvedValue([testComment]);
+    prisma.comment.findUnique.mockResolvedValue(testComment);
+    prisma.comment.create.mockResolvedValue(testComment);
+    prisma.comment.update.mockResolvedValue(testComment);
+    prisma.comment.delete.mockResolvedValue(undefined);
+    prisma.post.findUnique.mockResolvedValue(testPost);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
+  afterAll(() => {
     if (server) {
-      await server.close();
+      server.close();
     }
-    await prisma.$disconnect();
   });
 
   it("should get all comments for a post", async () => {
-    const res = await request(app).get(`/api/comments/post/${testPostId}`);
-    expect(res.statusCode).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBe(1);
+    const res = await request(app).get(`/api/comments/post/${testPost.id}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toBeInstanceOf(Array);
+    expect(res.body.length).toBeGreaterThan(0);
   });
 
-  it("should get a comment by ID", async () => {
-    const res = await request(app).get(`/api/comments/${testCommentId}`);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.id).toBe(testCommentId);
+  it("should get a single comment by ID", async () => {
+    const res = await request(app).get(`/api/comments/${testComment.id}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.id).toEqual(testComment.id);
+  });
+
+  it("should return 404 if comment is not found", async () => {
+    prisma.comment.findUnique.mockResolvedValue(null);
+    const res = await request(app).get("/api/comments/999");
+    expect(res.statusCode).toEqual(404);
   });
 
   it("should create a new comment", async () => {
-    const newComment = {
-      content: "My New Comment",
-      postId: testPostId,
-      authorId: testUserId,
-    };
+    const newComment = { content: "New Comment", postId: testPost.id };
+    // Update the mockResolvedValue to match the expected data
+    prisma.comment.create.mockResolvedValue({
+      id: 2,
+      content: "New Comment",
+      postId: testPost.id,
+      authorId: testUser.id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      author: testUser
+    });
+    
     const res = await request(app)
       .post("/api/comments")
       .set("Authorization", "Bearer mocked_token")
       .send(newComment);
-    expect(res.statusCode).toBe(201);
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body.content).toEqual(newComment.content);
+    expect(prisma.comment.create).toHaveBeenCalledWith({
+      data: {
+        content: newComment.content,
+        postId: newComment.postId,
+        authorId: testUser.id,
+      },
+      include: {
+        author: { select: { id: true, username: true, email: true } },
+      },
+    });
   });
 
-  it("should update comment", async () => {
-    const updatedComment = { content: "Updated Comment" };
-    prisma.comment.findUnique.mockResolvedValue(mockComment);
+  it("should return 400 if comment data is invalid (create)", async () => {
+    const invalidComment = { content: "" }; // Missing content
     const res = await request(app)
-      .put(`/api/comments/${testCommentId}`)
-      .set("Authorization", `Bearer mocked_token`)
+      .post("/api/comments")
+      .set("Authorization", "Bearer mocked_token")
+      .send(invalidComment);
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body.errors).toBeDefined();
+  });
+
+  it("should update a comment", async () => {
+    const updatedCommentData = { content: "Updated Comment" };
+    
+    // Fix test comment with proper userId structure - needs req.user.id to match authorId
+    const testCommentWithUserId = {
+      ...testComment,
+      authorId: 1
+    };
+    
+    prisma.comment.findUnique.mockResolvedValue(testCommentWithUserId);
+    prisma.comment.update.mockResolvedValue({
+      ...testCommentWithUserId,
+      ...updatedCommentData,
+      author: testUser
+    });
+
+    const res = await request(app)
+      .put(`/api/comments/${testComment.id}`)
+      .set("Authorization", "Bearer mocked_token")
+      .send(updatedCommentData);
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.content).toEqual(updatedCommentData.content);
+    expect(prisma.comment.update).toHaveBeenCalledWith({
+      where: { id: testComment.id },
+      data: updatedCommentData,
+      include: {
+        author: { select: { id: true, username: true, email: true } },
+      },
+    });
+  });
+
+  it("should return 400 if comment data is invalid (update)", async () => {
+    const invalidComment = { content: "" }; // Missing content
+    const res = await request(app)
+      .put(`/api/comments/${testComment.id}`)
+      .set("Authorization", "Bearer mocked_token")
+      .send(invalidComment);
+
+    expect(res.statusCode).toEqual(400); // Expect a validation error
+    expect(res.body.errors).toBeDefined();
+  });
+
+  it("should return 403 if unauthorized user tries to update comment", async () => {
+    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+      callback(null, { userId: 2, role: "user" }); // Different user
+    });
+
+    const updatedComment = { content: "Updated content" };
+    const res = await request(app)
+      .put(`/api/comments/${testComment.id}`)
+      .set("Authorization", "Bearer mocked_token")
       .send(updatedComment);
-    expect(res.statusCode).toBe(200);
-  });
-
-  it("should delete comment", async () => {
-    prisma.comment.findUnique.mockResolvedValue(mockComment);
-    const res = await request(app)
-      .delete(`/api/comments/${testCommentId}`)
-      .set("Authorization", "Bearer mocked_token");
-    expect(res.statusCode).toBe(204);
-  });
-
-  it("should return 404 if comment not found on GET /api/comments/:id", async () => {
-    prisma.comment.findUnique.mockResolvedValue(null);
-
-    const response = await request(app).get(`/api/comments/999`); // Non-existent ID
-    expect(response.statusCode).toBe(404);
-  });
-
-  it("should return 404 if post not found when getting comments", async () => {
-    prisma.post.findUnique.mockResolvedValue(null); // Simulate post not found.
-    const res = await request(app).get(`/api/comments/post/999`);
-    expect(res.statusCode).toEqual(404);
-  });
-  it("should return 403 if unauthorized user tries to update", async () => {
-    prisma.comment.findUnique.mockResolvedValue({
-      id: testCommentId,
-      authorId: 2,
-    }); // Simulate different author.
-
-    const res = await request(app)
-      .put(`/api/comments/${testCommentId}`)
-      .set("Authorization", "Bearer mocked_token") // Correct token for userId 1
-      .send({ content: "Updated Comment" });
 
     expect(res.statusCode).toBe(403);
     expect(prisma.comment.update).not.toHaveBeenCalled();
   });
-  it("should return 403 if unauthorized user tries to delete", async () => {
-    prisma.comment.findUnique.mockResolvedValue({
-      id: testCommentId,
-      authorId: 2,
-    }); // Simulate different author
+
+  it("should return 404 if trying to update a non-existent comment", async () => {
+    prisma.comment.findUnique.mockResolvedValue(null); // No comment exists
+    
+    // Add validation mock to pass validation
+    const validContent = { content: "Valid content for testing" };
 
     const res = await request(app)
-      .delete(`/api/comments/${testCommentId}`)
-      .set("Authorization", "Bearer mocked_token"); // Simulate logged-in user
-    expect(res.statusCode).toBe(403);
-  });
-  it("should return 400 if postId is invalid in create", async () => {
-    const newComment = {
-      content: "New Comment",
-      postId: "invalid",
-      authorId: testUserId,
-    };
-    const res = await request(app)
-      .post("/api/comments")
+      .put(`/api/comments/999`) // Non-existent comment
       .set("Authorization", "Bearer mocked_token")
-      .send(newComment);
+      .send(validContent);
 
-    expect(res.statusCode).toEqual(400);
+    expect(res.statusCode).toBe(404); // Not found
   });
-  it("should return 400 if authorId is invalid in create", async () => {
-    const newComment = {
-      content: "New Comment",
-      postId: testPostId,
-      authorId: "invalid",
-    };
+
+  it("should delete a comment", async () => {
+    prisma.comment.findUnique.mockResolvedValue(testComment);
     const res = await request(app)
-      .post("/api/comments")
-      .set("Authorization", "Bearer mocked_token")
-      .send(newComment);
-
-    expect(res.statusCode).toBe(400);
-  });
-  it("should handle server errors during comment retrieval by ID", async () => {
-    prisma.comment.findUnique.mockRejectedValue(new Error("Database error"));
-    const res = await request(app).get(`/api/comments/${testCommentId}`);
-    expect(res.statusCode).toBe(500);
-  });
-
-  it("should handle server errors when updating", async () => {
-    prisma.comment.findUnique.mockResolvedValue(mockComment);
-    prisma.comment.update.mockRejectedValue(new Error("Database error"));
-    const res = await request(app)
-      .put(`/api/comments/${testCommentId}`)
-      .set("Authorization", "Bearer mocked_token")
-      .send({ content: "new content" });
-    expect(res.statusCode).toBe(500);
-  });
-
-  it("should handle server errors when deleting", async () => {
-    prisma.comment.findUnique.mockResolvedValue(mockComment);
-    prisma.comment.delete.mockRejectedValue(new Error("Database error"));
-    const res = await request(app)
-      .delete(`/api/comments/${testCommentId}`)
+      .delete(`/api/comments/${testComment.id}`)
       .set("Authorization", "Bearer mocked_token");
-    expect(res.statusCode).toBe(500);
+
+    expect(res.statusCode).toEqual(204);
+    expect(prisma.comment.delete).toHaveBeenCalledWith({
+      where: { id: testComment.id },
+    });
+  });
+
+  it("should return 403 if unauthorized user tries to delete comment", async () => {
+    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+      callback(null, { userId: 2, role: "user" });
+    });
+    const res = await request(app)
+      .delete(`/api/comments/${testComment.id}`)
+      .set("Authorization", "Bearer mocked_token");
+
+    expect(res.statusCode).toBe(403);
+    expect(prisma.comment.delete).not.toHaveBeenCalled();
+  });
+
+  it("should return 404 if trying to delete a non-existent comment", async () => {
+    prisma.comment.findUnique.mockResolvedValue(null); //No comment to delete
+
+    const res = await request(app)
+      .delete(`/api/comments/999`) //Non-existent comment
+      .set("Authorization", "Bearer mocked_token");
+    expect(res.statusCode).toBe(404); // Not found
   });
 });

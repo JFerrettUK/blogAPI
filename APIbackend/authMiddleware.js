@@ -1,4 +1,3 @@
-// APIbackend/authMiddleware.js
 const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; // Use environment variable
@@ -17,7 +16,11 @@ const authenticateToken = (req, res, next) => {
     if (err) {
       return res.status(403).json({ message: "Forbidden - Invalid token" });
     }
-    req.user = user;
+    // Ensure both id and userId are available for backward compatibility
+    req.user = { 
+      ...user, 
+      id: user.userId || user.id 
+    };
     next();
   });
 };

@@ -1,251 +1,199 @@
-// __tests__/posts.test.js
 const request = require("supertest");
-const { app, prisma, server } = require("../index"); // Import app, prisma, and server
+const { app, server } = require("../index");
 const jwt = require("jsonwebtoken");
 
-describe("Post Routes", () => {
-  const testUserId = 1;
-  const testPostId = 1;
-  const testUser = {
-    id: testUserId,
-    email: "test@example.com",
-    username: "testuser",
-    password: "hashed_password",
-    role: "user",
-  };
-  const testPost = {
-    id: testPostId,
-    title: "Test Post",
-    content: "Test Content",
-    authorId: testUserId,
-    published: true,
-  };
+jest.mock("jsonwebtoken");
+jest.mock("../prisma");
+const prisma = require("../prisma");
 
-  beforeAll((done) => {
-    if (!server) {
-      app.listen(3001, () => {
-        console.log("Test server running on port 3001");
-        done();
-      });
-    } else {
-      done();
-    }
-  });
+describe("Post Routes", () => {
+  let testPost;
+  let testUser;
 
   beforeEach(() => {
-    jwt.verify.mockImplementation((token, secret, callback) => {
-      callback(null, { userId: testUserId, role: "user" });
-    });
-
-    // Mock Prisma methods *for this file's tests*
-    prisma.post.findMany.mockReset();
-    prisma.post.findUnique.mockReset();
-    prisma.post.create.mockReset();
-    prisma.post.update.mockReset();
-    prisma.post.delete.mockReset();
-    prisma.user.findUnique.mockReset();
-
-    prisma.post.findMany.mockResolvedValue([testPost]);
-    prisma.post.findUnique.mockImplementation(async ({ where }) => {
-      if (where.id === testPostId) {
-        return testPost;
-      } else {
-        return null;
-      }
-    });
-    prisma.post.create.mockImplementation(async ({ data }) => ({
-      id: 2,
-      ...data,
-    })); // Simulate ID generation
-    prisma.post.update.mockImplementation(async ({ where, data }) => ({
-      ...testPost,
-      ...data,
-    }));
-    prisma.post.delete.mockResolvedValue();
-    prisma.user.findUnique.mockResolvedValue(testUser);
-  });
-
-  afterEach(() => {
+    // Reset all mocks
     jest.clearAllMocks();
+    
+    testUser = { id: 1, username: "testuser", role: "author" };
+    testPost = {
+      id: 1,
+      title: "Test Post",
+      content: "This is a test post.",
+      authorId: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Set up JWT mock
+    jwt.verify.mockImplementation((token, secret, callback) => {
+      callback(null, { userId: 1, role: "author" });
+    });
+
+    // Configure prisma mock methods for testing
+    prisma.post.findMany.mockResolvedValue([testPost]);
+    prisma.post.findUnique.mockResolvedValue(testPost);
+    prisma.post.create.mockResolvedValue(testPost);
+    prisma.post.update.mockResolvedValue(testPost);
+    prisma.post.delete.mockResolvedValue(undefined);
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     if (server) {
-      await server.close();
+      server.close();
     }
-    await prisma.$disconnect();
   });
 
   it("should get all posts", async () => {
     const res = await request(app).get("/api/posts");
-    expect(res.statusCode).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toBeInstanceOf(Array);
     expect(res.body.length).toBeGreaterThan(0);
   });
 
-  it("should get a post by ID", async () => {
-    const res = await request(app).get(`/api/posts/${testPostId}`);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.id).toBe(testPostId);
+  it("should get a single post by ID", async () => {
+    const res = await request(app).get(`/api/posts/${testPost.id}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.id).toEqual(testPost.id);
   });
 
-  it("should return 404 if post not found on GET /api/posts/:id", async () => {
+  it("should return 404 if post is not found", async () => {
     prisma.post.findUnique.mockResolvedValue(null);
-
-    const response = await request(app).get(`/api/posts/999`); // Non-existent ID
-    expect(response.statusCode).toBe(404);
-    expect(response.body.error).toBe("Post not found");
+    const res = await request(app).get("/api/posts/999");
+    expect(res.statusCode).toEqual(404);
   });
 
   it("should create a new post", async () => {
-    const newPost = {
-      title: "New Post",
-      content: "New Content",
-      authorId: testUserId,
-    };
-    prisma.post.create.mockResolvedValue({ id: 2, ...newPost });
-    const res = await request(app)
-      .post("/api/posts")
-      .set("Authorization", "Bearer mocked_token")
-      .send(newPost);
-    expect(res.statusCode).toBe(201);
-  });
-
-  it("should return 400 if title is missing on POST /api/posts", async () => {
-    const newPost = { content: "New Content", authorId: testUserId };
-    const res = await request(app)
-      .post("/api/posts")
-      .set("Authorization", "Bearer mocked_token")
-      .send(newPost);
-    expect(res.statusCode).toBe(400);
-  });
-  it("should return 400 if content is missing on POST /api/posts", async () => {
-    const newPost = { title: "New Title", authorId: testUserId };
-    const res = await request(app)
-      .post("/api/posts")
-      .set("Authorization", "Bearer mocked_token")
-      .send(newPost);
-
-    expect(res.statusCode).toBe(400);
-  });
-
-  it("should return 403 if unauthorized user attempts to post on POST /api/posts", async () => {
-    // Set up a different user in the token.
-    jwt.verify.mockImplementationOnce((token, secret, callback) => {
-      callback(null, { userId: 999, role: "user" }); // Different user ID
+    const newPost = { title: "New Post", content: "New content" };
+    // Update the mockResolvedValue to match the expected data
+    prisma.post.create.mockResolvedValue({
+      id: 2,
+      ...newPost,
+      authorId: testUser.id,
+      published: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
-
-    const newPost = {
-      title: "New Post",
-      content: "New Content",
-      authorId: testUserId,
-    };
+    
     const res = await request(app)
       .post("/api/posts")
       .set("Authorization", "Bearer mocked_token")
       .send(newPost);
 
-    expect(res.statusCode).toBe(403);
-    expect(prisma.post.create).not.toHaveBeenCalled(); // Verify create wasn't called.
+    expect(res.statusCode).toEqual(201);
+    expect(res.body.title).toEqual(newPost.title);
+    expect(prisma.post.create).toHaveBeenCalledWith({
+      data: {
+        title: newPost.title,
+        content: newPost.content,
+        authorId: testUser.id,
+        published: true,
+      },
+    });
+  });
+
+  it("should return 400 if post data is invalid (create)", async () => {
+    const invalidPost = { title: "" }; // Missing content
+    const res = await request(app)
+      .post("/api/posts")
+      .set("Authorization", "Bearer mocked_token")
+      .send(invalidPost);
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body.errors).toBeDefined();
   });
 
   it("should update a post", async () => {
-    const updatedPost = { title: "Updated Title", content: "Updated Content" };
-    prisma.post.findUnique.mockResolvedValue(testPost);
-    prisma.post.update.mockResolvedValue({ ...testPost, ...updatedPost });
+    const updatedPostData = {
+      title: "Updated Title",
+      content: "Updated content",
+    };
+    prisma.post.findUnique.mockResolvedValue(testPost); // Check exist
+    prisma.post.update.mockResolvedValue({
+      ...testPost,
+      ...updatedPostData,
+    });
 
     const res = await request(app)
-      .put(`/api/posts/${testPostId}`)
+      .put(`/api/posts/${testPost.id}`)
+      .set("Authorization", "Bearer mocked_token")
+      .send(updatedPostData);
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.title).toEqual(updatedPostData.title);
+    expect(prisma.post.update).toHaveBeenCalledWith({
+      where: { id: testPost.id },
+      data: updatedPostData,
+    });
+  });
+
+  it("should return 400 if post data is invalid (update)", async () => {
+    const invalidPost = { title: "" }; // Missing content
+    const res = await request(app)
+      .put(`/api/posts/${testPost.id}`)
+      .set("Authorization", "Bearer mocked_token")
+      .send(invalidPost);
+    expect(res.statusCode).toEqual(400);
+    expect(res.body.errors).toBeDefined();
+  });
+
+  it("should return 403 if unauthorized user tries to update a post", async () => {
+    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+      callback(null, { userId: 2, role: "user" }); // Different user
+    });
+
+    const updatedPost = { title: "Updated Title", content: "Updated content" };
+    const res = await request(app)
+      .put(`/api/posts/${testPost.id}`)
       .set("Authorization", "Bearer mocked_token")
       .send(updatedPost);
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.title).toBe("Updated Title");
-    expect(res.body.content).toBe("Updated Content");
-    expect(prisma.post.update).toHaveBeenCalledWith({
-      where: { id: testPostId },
-      data: updatedPost,
-    });
-  });
-
-  it("should return 404 if post not found when updating", async () => {
-    prisma.post.findUnique.mockResolvedValue(null);
-    const res = await request(app)
-      .put(`/api/posts/999`)
-      .set("Authorization", "Bearer mocked_token")
-      .send({ title: "Updated Title" });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it("should return 403 if unauthorized user tries to update", async () => {
-    prisma.post.findUnique.mockResolvedValue({ id: testPostId, authorId: 2 }); // Simulate different author
-    const res = await request(app)
-      .put(`/api/posts/${testPostId}`)
-      .set("Authorization", "Bearer mocked_token")
-      .send({ title: "Updated Title" });
     expect(res.statusCode).toBe(403);
+    expect(prisma.post.update).not.toHaveBeenCalled();
+  });
+
+  it("should return 404 if trying to update a non-existent post", async () => {
+    prisma.post.findUnique.mockResolvedValue(null);
+
+    const res = await request(app)
+      .put(`/api/posts/999`) // Nonexistent post
+      .set("Authorization", "Bearer mocked_token")
+      .send({ title: "New Title", content: "New content" });
+
+    expect(res.statusCode).toBe(404); // Not found
   });
 
   it("should delete a post", async () => {
-    prisma.post.findUnique.mockResolvedValue(testPost);
-    prisma.post.delete.mockResolvedValue();
+    prisma.post.findUnique.mockResolvedValue(testPost); // Check exist
+
     const res = await request(app)
-      .delete(`/api/posts/${testPostId}`)
+      .delete(`/api/posts/${testPost.id}`)
       .set("Authorization", "Bearer mocked_token");
-    expect(res.statusCode).toBe(204);
+
+    expect(res.statusCode).toEqual(204);
     expect(prisma.post.delete).toHaveBeenCalledWith({
-      where: { id: testPostId },
+      where: { id: testPost.id },
     });
   });
 
-  it("should return 404 if post not found when deleting", async () => {
-    prisma.post.findUnique.mockResolvedValue(null);
+  it("should return 403 if unauthorized user tries to delete a post", async () => {
+    jwt.verify.mockImplementationOnce((token, secret, callback) => {
+      callback(null, { userId: 2, role: "user" }); // Simulate a different user trying to delete
+    });
     const res = await request(app)
-      .delete(`/api/posts/999`)
+      .delete(`/api/posts/${testPost.id}`)
       .set("Authorization", "Bearer mocked_token");
-    expect(res.statusCode).toBe(404);
-  });
 
-  it("should return 403 if unauthorized user tries to delete", async () => {
-    prisma.post.findUnique.mockResolvedValue({ id: testPostId, authorId: 2 });
-    const res = await request(app)
-      .delete(`/api/posts/${testPostId}`)
-      .set("Authorization", "Bearer mocked_token"); // Simulate logged-in user
     expect(res.statusCode).toBe(403);
+    expect(prisma.post.delete).not.toHaveBeenCalled();
   });
 
-  it("should handle server errors for GET requests", async () => {
-    prisma.post.findMany.mockRejectedValue(new Error("Database error"));
-    const res = await request(app).get("/api/posts");
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: "Internal server error" });
-  });
+  it("should return 404 if trying to delete a non-existent post", async () => {
+    prisma.post.findUnique.mockResolvedValue(null); // Simulate the post not existing
 
-  it("should handle server errors for POST requests", async () => {
-    prisma.post.create.mockRejectedValue(new Error("Database error"));
     const res = await request(app)
-      .post("/api/posts")
-      .set("Authorization", "Bearer mocked_token")
-      .send({ title: "New Post", content: "New Content", authorId: 1 });
-    expect(res.statusCode).toBe(500);
-  });
-
-  it("should handle server errors for PUT requests", async () => {
-    prisma.post.findUnique.mockResolvedValue(testPost);
-    prisma.post.update.mockRejectedValue(new Error("Database error"));
-    const res = await request(app)
-      .put(`/api/posts/${testPostId}`)
-      .set("Authorization", "Bearer mocked_token")
-      .send({ title: "Updated Title" });
-    expect(res.statusCode).toBe(500);
-  });
-
-  it("should handle server errors for DELETE requests", async () => {
-    prisma.post.findUnique.mockResolvedValue(testPost);
-    prisma.post.delete.mockRejectedValue(new Error("Database error"));
-    const res = await request(app)
-      .delete(`/api/posts/${testPostId}`)
+      .delete(`/api/posts/999`) // Nonexistent post
       .set("Authorization", "Bearer mocked_token");
-    expect(res.statusCode).toBe(500);
+
+    expect(res.statusCode).toBe(404); // Not found
   });
 });

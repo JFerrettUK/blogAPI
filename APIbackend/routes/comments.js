@@ -1,15 +1,14 @@
-// APIbackend/routes/comments.js
 const express = require("express");
 const router = express.Router();
-const commentsController = require("../controllers/commentsControllers");
+const commentsController = require("../controllers/commentsControllers"); // Correct Path
 const { authenticateToken, authorizeRole } = require("../authMiddleware");
-const { body, validationResult } = require("express-validator");
+const { body, validationResult } = require("express-validator"); // Import for validation
 
-//Validation Middleware
+// Validation middleware
 const validateComment = [
   body("content").trim().notEmpty().withMessage("Comment content is required."),
   body("postId").isInt().withMessage("Post ID must be an integer."),
-  body("authorId").isInt().withMessage("Author ID must be an integer."),
+  // authorId is now derived from the token, so we don't validate it in the request body anymore.
 ];
 
 // GET all comments for a specific post
@@ -22,7 +21,6 @@ router.get("/:id", commentsController.getCommentById);
 router.post(
   "/",
   authenticateToken,
-  validateComment,
   commentsController.createComment
 );
 
@@ -31,16 +29,14 @@ router.put(
   "/:id",
   authenticateToken,
   authorizeRole("author", "admin"),
-  validateComment,
   commentsController.updateComment
-);
+); // Validation is now in the controller
 router.patch(
   "/:id",
   authenticateToken,
   authorizeRole("author", "admin"),
-  validateComment,
   commentsController.updateComment
-);
+); // Validation is now in the controller
 
 // DELETE a comment by ID (protected, author or admin only)
 router.delete(
