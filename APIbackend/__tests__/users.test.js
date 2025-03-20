@@ -15,7 +15,7 @@ describe("User Routes", () => {
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
-    
+
     // Store the test user
     testUser = {
       id: testUserId,
@@ -24,7 +24,7 @@ describe("User Routes", () => {
       password: "hashed_password",
       role: "user",
     };
-    
+
     // Configure prisma mock methods for testing
     prisma.user.findUnique.mockImplementation(async ({ where }) => {
       if (where.email === "test@example.com" || where.id === testUserId) {
@@ -32,7 +32,7 @@ describe("User Routes", () => {
       }
       return null;
     });
-    
+
     prisma.user.findMany.mockResolvedValue([testUser]);
     prisma.user.create.mockResolvedValue(testUser);
     prisma.user.update.mockResolvedValue(testUser);
@@ -245,17 +245,26 @@ describe("User Routes", () => {
   });
 
   it("should handle Prisma errors during delete and return 500", async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     jwt.verify.mockImplementation((token, secret, callback) => {
       callback(null, { userId: testUserId, role: "user" });
     });
     prisma.user.delete.mockImplementation(() => {
-      throw new Error("Some database error"); // Simulate a generic Prisma error
+      throw new Error("Some database error");
     });
 
     const res = await request(app)
       .delete(`/api/users/${testUserId}`)
       .set("Authorization", "Bearer mocked_token");
 
-    expect(res.statusCode).toBe(500); // Or your specific error handling code
+    expect(res.statusCode).toBe(500);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    prisma.user.delete.mockReset();
   });
 });

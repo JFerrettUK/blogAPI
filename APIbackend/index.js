@@ -7,14 +7,41 @@ const { authenticateToken, authorizeRole } = require("./authMiddleware");
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+// Configure CORS
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS || '*', // In production, set to specific origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Request parsing middleware
 app.use(express.json());
+
+// Rate limiting
+const rateLimit = require('express-rate-limit');
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later'
+});
+
+// Apply rate limiting to all routes
+app.use(apiLimiter);
 
 // Import route handlers
 const userRoutes = require("./routes/users");
 const postRoutes = require("./routes/posts");
 const commentRoutes = require("./routes/comments");
 
+// Serve static files from the public directory
+app.use(express.static('public'));
+
+// Serve API documentation
+app.get('/docs', (req, res) => {
+  res.sendFile(__dirname + '/docs/api-documentation.md');
+});
+
+// API routes
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);

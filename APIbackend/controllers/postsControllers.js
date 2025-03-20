@@ -26,7 +26,7 @@ exports.getAllPosts = async (req, res) => {
     });
     res.json(posts);
   } catch (error) {
-    console.error("Error fetching posts:", error);
+    console.error("Error fetching posts:", error.message, error.stack);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -55,7 +55,7 @@ exports.getPostById = async (req, res) => {
     }
     res.json(post);
   } catch (error) {
-    console.error("Error fetching post by ID:", error);
+    console.error("Error fetching post by ID:", error.message, error.stack, { postId: req.params.id });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -80,7 +80,7 @@ exports.createPost = async (req, res) => {
     });
     res.status(201).json(post);
   } catch (error) {
-    console.error("Error creating post:", error);
+    console.error("Error creating post:", error.message, error.stack, { title: req.body.title, authorId: req.user.userId });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -113,7 +113,7 @@ exports.updatePost = async (req, res) => {
     });
     res.json(updatedPost);
   } catch (error) {
-    console.error("Error updating post:", error);
+    console.error("Error updating post:", error.message, error.stack, { postId: req.params.id, userId: req.user.userId });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -140,7 +140,7 @@ exports.deletePost = async (req, res) => {
     });
     res.sendStatus(204); // No content
   } catch (error) {
-    console.error("Error deleting post:", error);
+    console.error("Error deleting post:", error.message, error.stack, { postId: req.params.id, userId: req.user.userId });
     res.status(500).json({ error: "Internal server error" });
   }
 };

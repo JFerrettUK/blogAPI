@@ -17,9 +17,9 @@ const authenticateToken = (req, res, next) => {
       return res.status(403).json({ message: "Forbidden - Invalid token" });
     }
     // Ensure both id and userId are available for backward compatibility
-    req.user = { 
-      ...user, 
-      id: user.userId || user.id 
+    req.user = {
+      ...user,
+      id: user.userId || user.id,
     };
     next();
   });

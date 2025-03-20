@@ -12,7 +12,7 @@ exports.getAllUsers = async (req, res) => {
     });
     res.json(users);
   } catch (error) {
-    console.error("Error fetching users:", error);
+    console.error("Error fetching users:", error.message, error.stack);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -43,7 +43,7 @@ exports.getUserById = async (req, res) => {
     }
     res.json(user);
   } catch (error) {
-    console.error("Error fetching user:", error);
+    console.error("Error fetching user:", error.message, error.stack, { userId: req.params.id });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -78,7 +78,7 @@ exports.createUser = async (req, res) => {
       .status(201)
       .json({ id: user.id, email: user.email, username: user.username });
   } catch (error) {
-    console.error("Error creating user:", error);
+    console.error("Error creating user:", error.message, error.stack, { email: req.body.email, username: req.body.username });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -109,7 +109,7 @@ exports.loginUser = async (req, res) => {
     });
     res.json({ token });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error:", error.message, error.stack, { email: req.body.email });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -154,7 +154,7 @@ exports.updateUser = async (req, res) => {
     });
     res.json(updatedUser);
   } catch (error) {
-    console.error("Error updating user:", error);
+    console.error("Error updating user:", error.message, error.stack, { userId: req.params.id, updateData: req.body });
     if (error.code === "P2002") {
       return res
         .status(400)
@@ -177,7 +177,7 @@ exports.deleteUser = async (req, res) => {
     });
     res.sendStatus(204); // No Content
   } catch (error) {
-    console.error("Error deleting user:", error);
+    console.error("Error deleting user:", error.message, error.stack, { userId: req.params.id });
     res.status(500).json({ error: "Internal server error" });
   }
 };

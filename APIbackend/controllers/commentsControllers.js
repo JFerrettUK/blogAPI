@@ -28,7 +28,7 @@ exports.getCommentsByPostId = async (req, res) => {
 
     res.json(comments);
   } catch (error) {
-    console.error("Error fetching comments by post ID:", error);
+    console.error("Error fetching comments by post ID:", error.message, error.stack, { postId: req.params.postId });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -51,7 +51,7 @@ exports.getCommentById = async (req, res) => {
     }
     res.json(comment);
   } catch (error) {
-    console.error("Error fetching comment by ID:", error);
+    console.error("Error fetching comment by ID:", error.message, error.stack, { commentId: req.params.id });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -78,7 +78,7 @@ exports.createComment = [validateComment, async (req, res) => {
     });
     res.status(201).json(comment);
   } catch (error) {
-    console.error("Error creating comment:", error);
+    console.error("Error creating comment:", error.message, error.stack, { postId: req.body.postId, authorId: req.user.userId, content: req.body.content });
     if (error.code === "P2003") {
       // Foreign key constraint failed (post doesn't exist)
       return res.status(400).json({ error: "Invalid post ID" });
@@ -120,7 +120,7 @@ exports.updateComment = [validateComment, async (req, res) => {
     });
     res.json(updatedComment);
   } catch (error) {
-    console.error("Error updating comment:", error);
+    console.error("Error updating comment:", error.message, error.stack, { commentId: req.params.id, userId: req.user.id });
     res.status(500).json({ error: "Internal server error" });
   }
 }];
@@ -146,7 +146,7 @@ exports.deleteComment = async (req, res) => {
     });
     res.sendStatus(204);
   } catch (error) {
-    console.error("Error deleting comment:", error);
+    console.error("Error deleting comment:", error.message, error.stack, { commentId: req.params.id, userId: req.user.id });
     res.status(500).json({ error: "Internal server error" });
   }
 };
